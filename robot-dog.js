@@ -14,6 +14,21 @@ class RobotDog {
         this.draw();
     }
     
+    // Helper method to draw rounded rectangles for better browser compatibility
+    drawRoundedRect(x, y, width, height, radius) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + radius, y);
+        this.ctx.lineTo(x + width - radius, y);
+        this.ctx.arc(x + width - radius, y + radius, radius, Math.PI * 1.5, Math.PI * 2);
+        this.ctx.lineTo(x + width, y + height - radius);
+        this.ctx.arc(x + width - radius, y + height - radius, radius, 0, Math.PI * 0.5);
+        this.ctx.lineTo(x + radius, y + height);
+        this.ctx.arc(x + radius, y + height - radius, radius, Math.PI * 0.5, Math.PI);
+        this.ctx.lineTo(x, y + radius);
+        this.ctx.arc(x + radius, y + radius, radius, Math.PI, Math.PI * 1.5);
+        this.ctx.closePath();
+    }
+    
     draw() {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -59,19 +74,8 @@ class RobotDog {
         this.ctx.strokeStyle = '#2E5C8A';
         this.ctx.lineWidth = 3;
         
-        // Body rectangle with rounded corners (manual implementation for compatibility)
-        const x = -60, y = -30, width = 120, height = 50, radius = 10;
-        this.ctx.beginPath();
-        this.ctx.moveTo(x + radius, y);
-        this.ctx.lineTo(x + width - radius, y);
-        this.ctx.arc(x + width - radius, y + radius, radius, Math.PI * 1.5, Math.PI * 2);
-        this.ctx.lineTo(x + width, y + height - radius);
-        this.ctx.arc(x + width - radius, y + height - radius, radius, 0, Math.PI * 0.5);
-        this.ctx.lineTo(x + radius, y + height);
-        this.ctx.arc(x + radius, y + height - radius, radius, Math.PI * 0.5, Math.PI);
-        this.ctx.lineTo(x, y + radius);
-        this.ctx.arc(x + radius, y + radius, radius, Math.PI, Math.PI * 1.5);
-        this.ctx.closePath();
+        // Body rectangle with rounded corners
+        this.drawRoundedRect(-60, -30, 120, 50, 10);
         this.ctx.fill();
         this.ctx.stroke();
         
