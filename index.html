@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Robot Dog Controller</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: Monospace;
+            font-size: 13px;
+            line-height: 24px;
+            overscroll-behavior: none;
+        }
+
+        button {
+            background-color: #444;
+            color: white;
+            border: none;
+            margin: 2px;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #555;
+        }
+
+        #info {
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: center;
+            -moz-user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        a, button, input, select {
+            pointer-events: auto;
+        }
+
+        #renderContainer {
+            position: absolute; 
+            bottom: 0;
+            left: 0;
+            width: 100%; 
+            height: 100%; 
+        }
+    </style>
+</head>
+<body>
+    <!-- Video element for the camera feed -->
+    <video id="camera-feed" autoplay playsinline style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0;"></video>
+
+    <div id="voice-commands-log" style="position: absolute; top: 0; left: 0; width: 100%; background-color: rgba(255, 255, 255, 0.8); color: black; text-align: center; padding: 10px; z-index: 1;">
+        <span id="latest-command">Voice Commands Log</span>
+    </div>
+
+    <div style="position: absolute; z-index: 10; top: 10px; left: 10px;">
+        <button id="microphoneButton">Listen On</button>
+        <button id="walkForward">Walk Forward</button>
+        <button id="walkBackward">Walk Backward</button>
+        <button id="turnLeft">Turn Left</button>
+        <button id="turnRight">Turn Right</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@latest/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@latest/examples/jsm/"
+            }
+        }
+    </script>
+
+    <div id="renderContainer"></div> <!-- Container for the renderer -->
+
+    <script type="module">
+        // Voice commands
+        // Define the wake word and the action to be performed
+        const WAKE_WORD = 'hey squid'; // Define your wake word here
+        function onWakeWordDetected() {
+            // Action to be performed when the wake word is detected
+            console.log('Wake word detected...');
+            // Create a new speech synthesis utterance
+            const speech = new SpeechSynthesisUtterance('What can I do for you?');
+            window.speechSynthesis.speak(speech);
+            document.getElementById('latest-command').textContent = `AI Response: ${speech.text}`;
+        }
+
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        let camera, scene, renderer, mixer, clock;
+        let robotDogModel, walkAction;
+        let isWalking = false;
+        const rotationSpeed = 0.005; // Adjust this value for the rotation speed
+    
+        let currentRotation = Math.PI; // Current rotation of the dog
+        let targetRotation = Math.PI; // Target rotation after button click
+        const rotationStep = 20 * (Math.PI / 180); // 20 degrees in radians
+
+
+        init();
+        requestAnimationFrame(render);
+
+        async function setupWebcam() {
+            const video = document.getElementById('camera-feed');
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            video.play();
+
+            const videoTexture = new THREE.VideoTexture(video);
+            scene.background = videoTexture;
+        }
+
+        function init() {
+            const container = document.getElementById('renderContainer');
+            clock = new THREE.Clock();
+
+            camera = new THREE.PerspectiveCamera(60, container.offsetWidth / container.offsetHeight, 0.5, 50);
+            camera.position.set(0, 1, 5);
+
+            scene = new THREE.Scene();
+            setupWebcam();
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 4);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 8);
+            directionalLight.position.set(0, 1, 0);
+            scene.add(directionalLight);
+
+            const loader = new GLTFLoader();
+            loader.load('dog/scene.gltf', function (gltf) {
+                robotDogModel = gltf.scene;  // Remove const to use the wider scoped variable
+                robotDogModel.rotation.y = Math.PI;
+                robotDogModel.rotation.x = 30 * (Math.PI / 180);
+
+                // Set position (assuming the original y position is at ground level, adjust as needed)
+                robotDogModel.position.y = -0.2;
+                robotDogModel.scale.set(0.7, 0.7, 0.7);
+                scene.add(robotDogModel);
+                camera.lookAt(robotDogModel.position);
+
+
+                mixer = new THREE.AnimationMixer(robotDogModel);
+                walkAction = mixer.clipAction(gltf.animations[0]);
+            });
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.addEventListener('change', render);
+            controls.minDistance = 2;
+            controls.maxDistance = 10;
+            controls.target.set(0, 1, 0);
+            controls.update();
+
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('microphoneButton').addEventListener('click', toggleListening);
+            document.getElementById('walkForward').addEventListener('click', walkForward);
+            document.getElementById('walkBackward').addEventListener('click', walkBackward);
+            document.getElementById('turnLeft').addEventListener('click', () => rotateDog('left'));
+            document.getElementById('turnRight').addEventListener('click', () => rotateDog('right'));
+
+        }
+
+        // // Rotation function
+        // function rotateDog(direction) {
+        //     if (robotDogModel && !walkAction.paused) {
+        //         const rotationDirection = direction === 'left' ? -1 : 1; // Adjust the direction
+        //         targetRotation += rotationStep * rotationDirection;
+        //     }
+        // }
+
+        // Rotation function
+        function rotateDog(direction) {
+            if (robotDogModel && !walkAction.paused) {
+                const rotationDirection = direction === 'left' ? 1 : -1; // Adjust the direction
+                targetRotation += rotationStep * rotationDirection;
+            }
+        }
+
+
+
+        // Updated walkForward function (to handle pause correctly)
+        function walkForward() {
+            if (mixer && walkAction) {
+                if (!isWalking || walkAction.timeScale <= 0) {
+                    walkAction.paused = false;
+                    walkAction.timeScale = 1; // Positive speed for forward animation
+                    walkAction.play();
+                    isWalking = true;
+                } else {
+                    walkAction.paused = !walkAction.paused;
+                }
+            }
+        }
+
+        // Updated walkBackward function
+        function walkBackward() {
+            if (mixer && walkAction) {
+                if (!isWalking || walkAction.timeScale >= 0) {
+                    walkAction.paused = false;
+                    walkAction.timeScale = -1; // Negative speed for backward animation
+                    walkAction.play();
+                    isWalking = true;
+                } else {
+                    walkAction.paused = !walkAction.paused;
+                }
+            }
+        }
+
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function render() {
+        const delta = clock.getDelta();
+        if (mixer) mixer.update(delta);
+
+        // Apply gradual rotation towards target
+        if (robotDogModel && currentRotation !== targetRotation) {
+            const rotationDirection = Math.sign(targetRotation - currentRotation);
+            let rotationChange = rotationSpeed * rotationDirection;
+            currentRotation += rotationChange;
+            robotDogModel.rotation.y = currentRotation;
+            // Clamp the rotation to the target to prevent overshooting
+            if ((rotationDirection > 0 && currentRotation > targetRotation) ||
+                (rotationDirection < 0 && currentRotation < targetRotation)) {
+                currentRotation = targetRotation;
+            }
+        }
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(render);
+    }
+
+    function flashCommandLog() {
+        const logElement = document.getElementById('voice-commands-log');
+        logElement.style.backgroundColor = 'red';
+        setTimeout(() => {
+        logElement.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+        }, 500); // Change back to transparent after 500 milliseconds
+    }
+
+    // Define recognition as a global variable
+    let recognition;
+    let isListening = false;
+
+    if ('webkitSpeechRecognition' in window) {
+      recognition = new webkitSpeechRecognition();
+      recognition.continuous = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = function(event) {
+        const last = event.results.length - 1;
+        const command = event.results[last][0].transcript.trim().toLowerCase();
+
+        console.log('Voice command received:', command); // Log received command for debugging
+
+        // Update and flash the voice commands log
+        document.getElementById('latest-command').textContent = `Last Command: ${command}`;
+        flashCommandLog();
+        
+        switch (command) {
+          case 'walk forward':
+            walkForward();
+            break;
+          case 'walk backward':
+            walkBackward();
+            break;
+          case 'turn left':
+            rotateDog('left');
+            break;
+          case 'turn right':
+            rotateDog('right');
+            break;
+          case WAKE_WORD:
+            onWakeWordDetected();
+            break;
+          default:
+            console.error('Unrecognized command:', command);
+        }
+      };
+
+      
+      recognition.onerror = function(event) {
+        console.error('Speech recognition error:', event.error);
+      };
+
+      recognition.onend = function() {
+        if (isListening) {
+            console.log('Speech recognition service restarted');
+            recognition.start(); // Restart recognition when it ends, if listening is on
+        } else {
+            console.log('Speech recognition service disconnected');
+        }
+      };
+
+    // Start the recognition immediately if isListening is true
+    if (isListening) {
+        recognition.start();
+    }
+    
+    } else {
+      console.error('webkitSpeechRecognition is not available in this browser.');
+    }
+
+    // Function to toggle listening state
+    function toggleListening() {
+        isListening = !isListening;
+        const micButton = document.getElementById('microphoneButton');
+
+        if (isListening) {
+            micButton.textContent = 'Listen Off';
+            startRecognition();
+        } else {
+            micButton.textContent = 'Listen On';
+            stopRecognition();
+        }
+    }
+
+    // Start the speech recognition service
+    function startRecognition() {
+        if ('webkitSpeechRecognition' in window) {
+            recognition.start();
+        } else {
+            console.error('webkitSpeechRecognition is not available in this browser.');
+        }
+    }
+
+    // Stop the speech recognition service
+    function stopRecognition() {
+        if ('webkitSpeechRecognition' in window) {
+            recognition.stop();
+        }
+    }
+    </script>
+</body>
+</html>
